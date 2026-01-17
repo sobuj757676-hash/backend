@@ -220,6 +220,7 @@
         const socket = io({ query: { type: 'admin' } });
         const logsDiv = document.getElementById('logs');
         const videoElement = document.getElementById('video-stream');
+        const videoOverlay = document.getElementById('video-overlay');
         const deviceSelect = document.getElementById('deviceSelect');
 
         let currentDeviceId = null;
@@ -238,6 +239,27 @@
             div.innerHTML = `<span style="opacity:0.5">[${time}]</span> ${message}`;
             logsDiv.appendChild(div);
             logsDiv.scrollTop = logsDiv.scrollHeight;
+        }
+
+        // Feedback Utilities
+        function showToast(msg, type = 'info') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.innerHTML = `<span>${type === 'success' ? '✅' : type === 'error' ? '❌' : 'ℹ️'}</span> ${msg}`;
+            container.appendChild(toast);
+            setTimeout(() => {
+                toast.style.animation = 'fadeOut 0.3s forwards';
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        function showVideoStatus(msg) {
+            if (videoOverlay) {
+                videoOverlay.innerText = msg;
+                videoOverlay.classList.add('visible');
+                setTimeout(() => videoOverlay.classList.remove('visible'), 2000);
+            }
         }
 
         // Audio Control (Toggled)
