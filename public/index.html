@@ -229,6 +229,12 @@
         let audioCtx;
         let nextTime = 0;
         let peerConnection = null;
+
+        // State Variables
+        let isAudioRunning = false;
+        let isVideoRunning = false;
+        let isRecording = false;
+
         const config = {
             iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
         };
@@ -347,6 +353,13 @@
 
                 peerConnection.onconnectionstatechange = () => {
                     log(`🔗 Connection state: ${peerConnection.connectionState}`);
+                    if (peerConnection.connectionState === 'failed') {
+                        showToast("Connection failed (Firewall/NAT?)", "error");
+                    }
+                };
+
+                peerConnection.oniceconnectionstatechange = () => {
+                    log(`❄️ ICE State: ${peerConnection.iceConnectionState}`);
                 };
 
                 log("⏳ Requesting camera...");
