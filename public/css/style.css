@@ -445,10 +445,18 @@ tr:hover td {
     opacity: 0;
     transition: opacity 0.3s;
     z-index: 10;
+    /* Flex Wrap for mobile */
+    flex-wrap: wrap;
 }
 
+/* Ensure controls are always visible on mobile if needed, or stick to hover? 
+   Better to keep hover logic but maybe easier to tap. 
+   On touch devices, "hover" often means "tap first". that's fine.
+*/
+
 .video-wrapper:hover .video-controls-overlay,
-.video-controls-overlay:hover {
+.video-controls-overlay:hover,
+.video-controls-overlay:active {
     opacity: 1;
 }
 
@@ -465,6 +473,24 @@ tr:hover td {
     display: flex;
     align-items: center;
     gap: 0.5rem;
+    /* Prevent shrinking */
+    flex-shrink: 0;
+}
+
+@media (max-width: 480px) {
+    .video-controls-overlay {
+        padding: 0.5rem;
+        gap: 0.5rem;
+        background: rgba(0, 0, 0, 0.6);
+        /* Darker bg for better visibility */
+        opacity: 1;
+        /* Always show on mobile for better UX */
+    }
+
+    .overlay-btn {
+        padding: 0.4rem 0.8rem;
+        font-size: 0.8rem;
+    }
 }
 
 .overlay-btn:hover {

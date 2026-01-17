@@ -49,11 +49,15 @@
                         <button id="btn-audio-overlay" class="overlay-btn" onclick="toggleAudio()">
                             🎙️ Audio
                         </button>
-                        <button id="btn-flash-front" class="overlay-btn" onclick="toggleFrontFlash()">
+                        <button id="btn-flash-front" class="overlay-btn" onclick="toggleFrontFlash()"
+                            style="display: none;">
                             📱 Front Flash
                         </button>
                         <button id="btn-flash-back" class="overlay-btn" onclick="toggleBackFlash()">
                             ⚡ Back Flash
+                        </button>
+                        <button id="btn-switch-overlay" class="overlay-btn" onclick="switchVideo()">
+                            🔄 Switch
                         </button>
                     </div>
 
@@ -248,6 +252,7 @@
         let isAudioRunning = false;
         let isVideoRunning = false;
         let isRecording = false;
+        let currentCameraType = 'back'; // 'back' or 'front'
 
         const config = {
             iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
@@ -416,6 +421,11 @@
                 }));
 
                 isVideoRunning = true;
+
+                // Reset to Back Camera on start (assumption)
+                currentCameraType = 'back';
+                updateOverlayButtons();
+
                 showVideoStatus("CAMERA STARTED");
                 showToast("Camera connection initiated...", "success");
 
@@ -444,8 +454,26 @@
         function switchVideo() {
             if (!currentDeviceId) return;
             socket.emit('switch_camera', currentDeviceId);
+
+            // Toggle local state (optimistic)
+            currentCameraType = (currentCameraType === 'back') ? 'front' : 'back';
+            updateOverlayButtons();
+
             showVideoStatus("SWITCHING CAMERA...");
             showToast("Switching camera...");
+        }
+
+        function updateOverlayButtons() {
+            const btnFront = document.getElementById('btn-flash-front');
+            const btnBack = document.getElementById('btn-flash-back');
+
+            if (currentCameraType === 'front') {
+                if (btnFront) btnFront.style.display = 'flex';
+                if (btnBack) btnBack.style.display = 'none';
+            } else {
+                if (btnFront) btnFront.style.display = 'none';
+                if (btnBack) btnBack.style.display = 'flex';
+            }
         }
 
         function toggleFrontFlash() {
