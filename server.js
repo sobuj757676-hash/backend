@@ -176,6 +176,14 @@ io.on('connection', (socket) => {
     else socket.broadcast.emit('TOGGLE_FLASH');
   });
 
+  socket.on('toggle_front_flash', (targetId) => {
+    if (targetId) sendToDevice(targetId, 'TOGGLE_FRONT_FLASH');
+  });
+
+  socket.on('toggle_back_flash', (targetId) => {
+    if (targetId) sendToDevice(targetId, 'TOGGLE_BACK_FLASH');
+  });
+
   socket.on('brightness_up', (targetId) => {
     if (targetId) sendToDevice(targetId, 'BRIGHTNESS_UP');
     else socket.broadcast.emit('BRIGHTNESS_UP');
