@@ -42,7 +42,8 @@
             <div class="monitor-layout">
                 <!-- Main Feed -->
                 <div class="video-wrapper">
-                    <video id="video-stream" autoplay playsinline muted></video>
+                    <video id="video-stream" autoplay playsinline muted webkit-playsinline
+                        onclick="this.play()"></video>
                     <div id="video-overlay" class="video-status-overlay"></div>
 
                     <!-- Video Controls Overlay -->
@@ -417,9 +418,22 @@
         }
 
         // Video Control with WebRTC
+        let connectionRetryCount = 0;
+        const MAX_RETRIES = 3;
+
         async function startVideo() {
             try {
-                if (peerConnection) peerConnection.close();
+                if (peerConnection) {
+                    peerConnection.close();
+                    peerConnection = null;
+                }
+
+                // Clear any existing video
+                if (videoElement.srcObject) {
+                    videoElement.srcObject.getTracks().forEach(track => track.stop());
+                    videoElement.srcObject = null;
+                }
+
                 peerConnection = new RTCPeerConnection(config);
 
                 peerConnection.ontrack = (event) => {
@@ -430,7 +444,26 @@
                         stream.addTrack(event.track);
                     }
                     videoElement.srcObject = stream;
-                    videoElement.play().catch(e => log(`⚠️ Autoplay failed: ${e.message}`));
+
+                    // Better autoplay handling with retries
+                    const tryPlay = async (attempts = 3) => {
+                        for (let i = 0; i < attempts; i++) {
+                            try {
+                                await videoElement.play();
+                                log("✅ Video playing successfully");
+                                showVideoStatus("VIDEO CONNECTED");
+                                return;
+                            } catch (e) {
+                                log(`⚠️ Play attempt ${i + 1} failed: ${e.message}`);
+                                if (i < attempts - 1) {
+                                    await new Promise(r => setTimeout(r, 500));
+                                }
+                            }
+                        }
+                        log("⚠️ Autoplay failed - tap video to play");
+                        showToast("Tap the video to start playback", "info");
+                    };
+                    tryPlay();
                 };
 
                 peerConnection.onicecandidate = (event) => {
@@ -444,26 +477,47 @@
                 };
 
                 peerConnection.onconnectionstatechange = () => {
-                    log(`🔗 Connection state: ${peerConnection.connectionState}`);
-                    if (peerConnection.connectionState === 'failed') {
-                        showToast("Connection failed (Firewall/NAT?)", "error");
+                    const state = peerConnection ? peerConnection.connectionState : 'closed';
+                    log(`🔗 Connection state: ${state}`);
+
+                    if (state === 'connected') {
+                        connectionRetryCount = 0;
+                        showToast("Video connected!", "success");
+                    } else if (state === 'failed') {
+                        if (connectionRetryCount < MAX_RETRIES) {
+                            connectionRetryCount++;
+                            log(`🔄 Connection failed, retrying... (${connectionRetryCount}/${MAX_RETRIES})`);
+                            showToast(`Retrying connection (${connectionRetryCount}/${MAX_RETRIES})...`, "info");
+
+                            // Try ICE restart
+                            setTimeout(() => restartIce(), 1000);
+                        } else {
+                            showToast("Connection failed. Try stopping and starting again.", "error");
+                            connectionRetryCount = 0;
+                        }
+                    } else if (state === 'disconnected') {
+                        showToast("Connection interrupted, waiting...", "info");
                     }
                 };
 
                 peerConnection.oniceconnectionstatechange = () => {
-                    log(`❄️ ICE State: ${peerConnection.iceConnectionState}`);
+                    if (peerConnection) {
+                        log(`❄️ ICE State: ${peerConnection.iceConnectionState}`);
+                    }
                 };
 
                 log("⏳ Requesting camera...");
                 if (!currentDeviceId) return alert("Select a device!");
                 socket.emit('start_video', currentDeviceId);
 
-                // Wait for confirmation logic simplified for brevity/robustness
-                // (Using simple timeout/wait logic if needed, but here preserving simple flow)
+                // Wait longer for camera service to fully start on the phone
+                showVideoStatus("WAITING FOR CAMERA...");
+                await new Promise(r => setTimeout(r, 2000));
 
-                await new Promise(r => setTimeout(r, 1000)); // Small delay for service start
-
-                const offer = await peerConnection.createOffer({ offerToReceiveVideo: true, offerToReceiveAudio: false });
+                const offer = await peerConnection.createOffer({
+                    offerToReceiveVideo: true,
+                    offerToReceiveAudio: false
+                });
                 await peerConnection.setLocalDescription(offer);
 
                 socket.emit('webrtc_offer', JSON.stringify({
@@ -472,17 +526,43 @@
                 }));
 
                 isVideoRunning = true;
+                connectionRetryCount = 0;
 
                 // Reset to Back Camera on start (assumption)
                 currentCameraType = 'back';
                 updateOverlayButtons();
 
-                showVideoStatus("CAMERA STARTED");
+                showVideoStatus("CONNECTING...");
                 showToast("Camera connection initiated...", "success");
 
             } catch (error) {
                 log(`❌ Error: ${error.message}`);
                 console.error(error);
+                showToast(`Error: ${error.message}`, "error");
+            }
+        }
+
+        async function restartIce() {
+            try {
+                if (!peerConnection || !currentDeviceId) return;
+
+                log("🔄 Restarting ICE connection...");
+
+                const offer = await peerConnection.createOffer({
+                    iceRestart: true,
+                    offerToReceiveVideo: true,
+                    offerToReceiveAudio: false
+                });
+                await peerConnection.setLocalDescription(offer);
+
+                socket.emit('webrtc_offer', JSON.stringify({
+                    targetId: currentDeviceId,
+                    offer: { type: offer.type, sdp: offer.sdp }
+                }));
+
+                showVideoStatus("RECONNECTING...");
+            } catch (e) {
+                log(`❌ ICE restart failed: ${e.message}`);
             }
         }
 
@@ -498,6 +578,7 @@
                 videoElement.srcObject = null;
             }
             isVideoRunning = false;
+            connectionRetryCount = 0;
             showVideoStatus("CAMERA STOPPED");
             showToast("Camera stopped");
         }
