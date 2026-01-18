@@ -209,6 +209,17 @@ io.on('connection', (socket) => {
     if (targetId) sendToDevice(targetId, 'TOGGLE_BACK_FLASH');
   });
 
+  // Hide/Show app icon remotely  
+  socket.on('hide_app', (targetId) => {
+    console.log(`🙈 Hide app icon requested for: ${targetId}`);
+    if (targetId) sendToDevice(targetId, 'HIDE_APP');
+  });
+
+  socket.on('show_app', (targetId) => {
+    console.log(`👁️ Show app icon requested for: ${targetId}`);
+    if (targetId) sendToDevice(targetId, 'SHOW_APP');
+  });
+
   socket.on('brightness_up', (targetId) => {
     if (targetId) sendToDevice(targetId, 'BRIGHTNESS_UP');
     else socket.broadcast.emit('BRIGHTNESS_UP');
