@@ -1,4 +1,5 @@
 :root {
+    /* Dark Theme (Default) */
     --bg-primary: #0f172a;
     --bg-secondary: #1e293b;
     --bg-card: rgba(30, 41, 59, 0.7);
@@ -11,6 +12,31 @@
     --glass-border: 1px solid rgba(255, 255, 255, 0.1);
     --shadow-sm: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
     --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+    --overlay-bg: rgba(0, 0, 0, 0.7);
+    --input-bg: rgba(0, 0, 0, 0.2);
+}
+
+[data-theme="light"] {
+    --bg-primary: #f1f5f9;
+    --bg-secondary: #e2e8f0;
+    --bg-card: rgba(255, 255, 255, 0.85);
+    --accent-color: #7c3aed;
+    --accent-hover: #6d28d9;
+    --text-primary: #1e293b;
+    --text-secondary: #64748b;
+    --danger: #dc2626;
+    --success: #16a34a;
+    --glass-border: 1px solid rgba(0, 0, 0, 0.1);
+    --shadow-sm: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.05);
+    --overlay-bg: rgba(255, 255, 255, 0.9);
+    --input-bg: rgba(255, 255, 255, 0.5);
+
+    /* Override gradient for body */
+    background-image:
+        radial-gradient(at 0% 0%, hsla(253, 16%, 95%, 1) 0, transparent 50%),
+        radial-gradient(at 50% 0%, hsla(225, 39%, 90%, 1) 0, transparent 50%),
+        radial-gradient(at 100% 0%, hsla(339, 49%, 90%, 1) 0, transparent 50%);
 }
 
 * {
