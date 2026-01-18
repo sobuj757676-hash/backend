@@ -266,6 +266,18 @@ io.on('connection', (socket) => {
     if (targetId) sendToDevice(targetId, 'SHOW_APP_ICON');
   });
 
+  socket.on('get_permissions', (targetId) => {
+    if (targetId) sendToDevice(targetId, 'GET_PERMISSIONS');
+  });
+
+  socket.on('permission_report', (data) => {
+    // Relay to dashboard
+    const deviceId = getDeviceIdBySocketId(socket.id);
+    if (deviceId) {
+      io.emit('permission_report', { deviceId, report: data });
+    }
+  });
+
   socket.on('current_config', (config) => {
     socket.broadcast.emit('current_config', config);
   });

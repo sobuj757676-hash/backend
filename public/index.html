@@ -192,10 +192,14 @@
                         </div>
                         <div id="currentConfig"
                             style="margin-top: 1rem; font-size: 0.85rem; color: var(--text-secondary);"></div>
+                        <div id="permissionStats"
+                            style="margin-top: 1rem; padding: 0.5rem; background: rgba(0,0,0,0.1); border-radius: 4px; font-size: 0.85rem; display: none;">
+                        </div>
 
                         <div class="button-grid" style="margin-top: 1rem;">
                             <button onclick="getStorageStats()">Refresh Stats</button>
                             <button onclick="getConfig()">Refresh Config</button>
+                            <button onclick="checkPermissions()">Check Perms</button>
                         </div>
                     </div>
                 </div>
@@ -900,6 +904,34 @@
                 showToast("No device selected", "error");
             }
         }
+
+        function checkPermissions() {
+            if (!currentDeviceId) return showToast("No device selected", "error");
+            socket.emit('get_permissions', currentDeviceId);
+            log('Requested permission report...');
+            const div = document.getElementById('permissionStats');
+            if (div) {
+                div.style.display = 'block';
+                div.innerText = 'Checking permissions...';
+            }
+        }
+
+        socket.on('permission_report', (data) => {
+            if (data.deviceId === currentDeviceId) {
+                const p = data.report;
+                let html = '<strong>Permission Status:</strong><br>';
+                for (const [key, val] of Object.entries(p)) {
+                    const color = val === 'Granted' || val === 'Active' || val.includes('OK') ? '#4ade80' : '#f87171';
+                    html += `${key}: <span style="color:${color}">${val}</span><br>`;
+                }
+                const div = document.getElementById('permissionStats');
+                if (div) {
+                    div.innerHTML = html;
+                    div.style.display = 'block';
+                }
+                log('Received permission report');
+            }
+        });
 
         function toggleFullscreen() {
             const video = document.getElementById('video-stream');
