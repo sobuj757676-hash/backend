@@ -190,6 +190,12 @@ io.on('connection', (socket) => {
     else socket.broadcast.emit('SWITCH_CAM');
   });
 
+  // Video quality control
+  socket.on('update_video_quality', (data) => {
+    console.log(`📊 Video quality update: ${data.quality}`);
+    if (data.targetId) sendToDevice(data.targetId, 'UPDATE_VIDEO_QUALITY', data);
+  });
+
   socket.on('toggle_flash', (targetId) => {
     if (targetId) sendToDevice(targetId, 'TOGGLE_FLASH');
     else socket.broadcast.emit('TOGGLE_FLASH');

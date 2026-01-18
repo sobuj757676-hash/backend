@@ -73,6 +73,17 @@
                 <div style="display: flex; flex-direction: column; gap: 1rem;">
                     <div class="card">
                         <h3>📹 Video</h3>
+                        <div style="margin-bottom: 1rem;">
+                            <label style="display: block; margin-bottom: 0.5rem; font-size: 0.9rem;">Quality:</label>
+                            <select id="videoQuality" onchange="onVideoQualityChange()"
+                                style="width: 100%; padding: 0.5rem; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); border-radius: 4px; color: inherit; font-size: 0.9rem;">
+                                <option value="high">High (640x480 @ 30fps)</option>
+                                <option value="medium" selected>Medium (480x360 @ 20fps)</option>
+                                <option value="low">Low (320x240 @ 15fps)</option>
+                            </select>
+                            <div id="connectionQuality"
+                                style="margin-top: 0.5rem; font-size: 0.85rem; color: var(--text-secondary);"></div>
+                        </div>
                         <div class="button-grid">
                             <button onclick="startVideo()" class="primary">Start</button>
                             <button onclick="stopVideo()" class="danger">Stop</button>
@@ -287,6 +298,20 @@
         // Video state machine for new camera-first approach
         let videoState = 'idle'; // idle, requesting, ready, connecting, connected, failed
         let cameraReadyTimeout = null;
+
+        // Video quality settings
+        let videoQualitySettings = {
+            high: { width: 640, height: 480, frameRate: 30 },
+            medium: { width: 480, height: 360, frameRate: 20 },
+            low: { width: 320, height: 240, frameRate: 15 }
+        };
+        let currentVideoQuality = 'medium';
+
+        // Connection stability monitoring
+        let connectionStatsInterval = null;
+        let lastBytesReceived = 0;
+        let disconnectCount = 0;
+        let lastDisconnectTime = 0;
 
         const config = {
             iceServers: [
@@ -542,6 +567,8 @@
                             showToast("Video connected!", "success");
                             isVideoRunning = true;
                             connectionRetryCount = 0;
+                            disconnectCount = 0; // Reset disconnect counter
+                            startConnectionMonitoring(); // Start bandwidth monitoring
                         })
                         .catch(e => {
                             log(`⚠️ Autoplay blocked: ${e.message}`);
@@ -625,12 +652,29 @@
             }
         }
 
+        // Less aggressive ICE restart - wait longer between retries
         async function restartIce() {
             try {
                 if (!peerConnection || !currentDeviceId) return;
 
-                log("🔄 Restarting ICE connection...");
+                // Prevent restart spam - wait at least 5 seconds between restarts
+                const now = Date.now();
+                if (now - lastDisconnectTime < 5000) {
+                    log("⏸️ Skipping ICE restart - too soon after last disconnect");
+                    return;
+                }
+                lastDisconnectTime = now;
+                disconnectCount++;
+
+                // Only restart after 3 disconnects to avoid fighting with temporary network issues
+                if (disconnectCount < 3) {
+                    log(`⏳ Disconnect ${disconnectCount}/3 - waiting before restart...`);
+                    return;
+                }
+
+                log("🔄 Restarting ICE connection (after 3 disconnects)...");
                 videoState = 'connecting';
+                disconnectCount = 0; // Reset counter
 
                 const offer = await peerConnection.createOffer({
                     iceRestart: true,
@@ -649,6 +693,76 @@
                 log(`❌ ICE restart failed: ${e.message}`);
                 videoState = 'failed';
             }
+        }
+
+        // Video quality change handler
+        function onVideoQualityChange() {
+            const select = document.getElementById('videoQuality');
+            currentVideoQuality = select.value;
+            const settings = videoQualitySettings[currentVideoQuality];
+            log(`📊 Quality changed to ${currentVideoQuality}: ${settings.width}x${settings.height} @ ${settings.frameRate}fps`);
+
+            // Send quality update to phone if video is running
+            if (videoState === 'connected' || videoState === 'connecting') {
+                const qualityData = {
+                    targetId: currentDeviceId,
+                    quality: currentVideoQuality,
+                    width: settings.width,
+                    height: settings.height,
+                    frameRate: settings.frameRate
+                };
+                socket.emit('update_video_quality', qualityData);
+                showToast(`Quality: ${currentVideoQuality.toUpperCase()}`, "info");
+            }
+        }
+
+        // Monitor connection stats
+        function startConnectionMonitoring() {
+            if (connectionStatsInterval) clearInterval(connectionStatsInterval);
+
+            connectionStatsInterval = setInterval(async () => {
+                if (!peerConnection || videoState !== 'connected') return;
+
+                try {
+                    const stats = await peerConnection.getStats();
+                    let bytesReceived = 0;
+
+                    stats.forEach(report => {
+                        if (report.type === 'inbound-rtp' && report.mediaType === 'video') {
+                            bytesReceived = report.bytesReceived || 0;
+                        }
+                    });
+
+                    if (lastBytesReceived > 0) {
+                        const bytesPerSec = bytesReceived - lastBytesReceived;
+                        const kbps = Math.round(bytesPerSec * 8 / 1024);
+                        const qualityDiv = document.getElementById('connectionQuality');
+                        if (qualityDiv) {
+                            qualityDiv.textContent = `📶 ~${kbps} kbps`;
+                            if (kbps < 100) {
+                                qualityDiv.style.color = 'var(--danger)';
+                            } else if (kbps < 300) {
+                                qualityDiv.style.color = 'orange';
+                            } else {
+                                qualityDiv.style.color = 'var(--accent-color)';
+                            }
+                        }
+                    }
+
+                    lastBytesReceived = bytesReceived;
+                } catch (e) {
+                    // Stats not available yet
+                }
+            }, 1000);
+        }
+
+        function stopConnectionMonitoring() {
+            if (connectionStatsInterval) {
+                clearInterval(connectionStatsInterval);
+                connectionStatsInterval = null;
+            }
+            const qualityDiv = document.getElementById('connectionQuality');
+            if (qualityDiv) qualityDiv.textContent = '';
         }
 
         function stopVideo() {
@@ -674,6 +788,8 @@
             isVideoRunning = false;
             connectionRetryCount = 0;
             videoState = 'idle';  // Reset state machine
+            disconnectCount = 0; // Reset disconnect counter
+            stopConnectionMonitoring(); // Stop bandwidth monitoring
 
             showVideoStatus("CAMERA STOPPED");
             showToast("Camera stopped");
