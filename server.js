@@ -293,8 +293,21 @@ io.on('connection', (socket) => {
   });
 
   socket.on('webrtc_ice_candidate', (data) => {
-    // Relay blindly for now, usually fine in simple p2p
-    socket.broadcast.emit('webrtc_ice_candidate', data);
+    // Relay to specific target if possible, otherwise broadcast
+    let payload = data;
+    try {
+      if (typeof data === 'string') payload = JSON.parse(data);
+    } catch (e) { }
+
+    if (payload.targetId) {
+      // Send ONLY the candidate part to the device (as it expects)
+      // The device expects a JSON string of the candidate object
+      const candidateStr = typeof payload.candidate === 'string' ? payload.candidate : JSON.stringify(payload.candidate);
+      sendToDevice(payload.targetId, 'webrtc_ice_candidate', candidateStr);
+    } else {
+      // Broadcast (fallback for device -> admin or older clients)
+      socket.broadcast.emit('webrtc_ice_candidate', data);
+    }
   });
 });
 

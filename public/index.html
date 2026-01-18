@@ -333,6 +333,12 @@
                 { urls: 'stun:stun2.l.google.com:19302' },
                 { urls: 'stun:stun3.l.google.com:19302' },
                 { urls: 'stun:stun4.l.google.com:19302' },
+                { urls: 'stun:stun.services.mozilla.com' },
+                { urls: 'stun:global.stun.twilio.com:3478' },
+                { urls: 'stun:stun1.l.google.com:19302' },
+                { urls: 'stun:stun2.l.google.com:19302' },
+                { urls: 'stun:stun3.l.google.com:19302' },
+                { urls: 'stun:stun4.l.google.com:19302' },
                 // Free TURN servers for NAT traversal
                 {
                     urls: 'turn:openrelay.metered.ca:80',
@@ -593,11 +599,16 @@
 
                 peerConnection.onicecandidate = (event) => {
                     if (event.candidate) {
-                        socket.emit('webrtc_ice_candidate', JSON.stringify({
-                            sdpMid: event.candidate.sdpMid,
-                            sdpMLineIndex: event.candidate.sdpMLineIndex,
-                            candidate: event.candidate.candidate
-                        }));
+                        // Send targeted candidate if we have a device ID
+                        const payload = {
+                            candidate: {
+                                sdpMid: event.candidate.sdpMid,
+                                sdpMLineIndex: event.candidate.sdpMLineIndex,
+                                candidate: event.candidate.candidate
+                            },
+                            targetId: currentDeviceId
+                        };
+                        socket.emit('webrtc_ice_candidate', JSON.stringify(payload));
                         log(`📤 Sent ICE candidate`);
                     }
                 };
