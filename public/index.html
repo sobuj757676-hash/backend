@@ -284,6 +284,10 @@
         let isRecording = false;
         let currentCameraType = 'back'; // 'back' or 'front'
 
+        // Video state machine for new camera-first approach
+        let videoState = 'idle'; // idle, requesting, ready, connecting, connected, failed
+        let cameraReadyTimeout = null;
+
         const config = {
             iceServers: [
                 { urls: 'stun:stun.l.google.com:19302' },
@@ -417,53 +421,134 @@
             }
         }
 
-        // Video Control with WebRTC
+        // Video Control with NEW Camera-First WebRTC Approach
         let connectionRetryCount = 0;
         const MAX_RETRIES = 3;
 
         async function startVideo() {
             try {
+                if (!currentDeviceId) {
+                    alert("Select a device first!");
+                    return;
+                }
+
+                // Check if already starting
+                if (videoState === 'requesting' || videoState === 'connecting') {
+                    showToast("Camera already starting...", "info");
+                    return;
+                }
+
+                log("📷 Starting camera (camera-first approach)...");
+                videoState = 'requesting';
+                showVideoStatus("REQUESTING CAMERA...");
+
+                // Clear any previous timeout
+                if (cameraReadyTimeout) {
+                    clearTimeout(cameraReadyTimeout);
+                }
+
+                // Clean up previous connection if exists
                 if (peerConnection) {
                     peerConnection.close();
                     peerConnection = null;
                 }
-
-                // Clear any existing video
                 if (videoElement.srcObject) {
                     videoElement.srcObject.getTracks().forEach(track => track.stop());
                     videoElement.srcObject = null;
                 }
 
+                // Request camera start from phone
+                socket.emit('request_camera_start', currentDeviceId);
+                log("⏳ Waiting for camera ready signal from phone...");
+
+                // Set timeout for camera ready (15 seconds)
+                cameraReadyTimeout = setTimeout(() => {
+                    if (videoState === 'requesting') {
+                        log("❌ Camera ready timeout - phone didn't respond");
+                        videoState = 'failed';
+                        showToast("Camera didn't start on phone. Try again.", "error");
+                        showVideoStatus("CAMERA TIMEOUT");
+                    }
+                }, 15000);
+
+            } catch (error) {
+                log(`❌ Error starting video: ${error.message}`);
+                console.error(error);
+                videoState = 'failed';
+                showToast(`Error: ${error.message}`, "error");
+            }
+        }
+
+        // Called when phone signals camera is ready
+        async function onCameraReady(deviceId) {
+            try {
+                if (deviceId !== currentDeviceId) {
+                    log(`⚠️ Received camera_ready from wrong device: ${deviceId}`);
+                    return;
+                }
+
+                if (videoState !== 'requesting') {
+                    log(`⚠️ Received camera_ready but state is ${videoState}, ignoring`);
+                    return;
+                }
+
+                // Clear timeout
+                if (cameraReadyTimeout) {
+                    clearTimeout(cameraReadyTimeout);
+                    cameraReadyTimeout = null;
+                }
+
+                log("✅ Camera ready! Creating WebRTC connection...");
+                videoState = 'ready';
+                showVideoStatus("CAMERA READY - CONNECTING...");
+
+                // Now setup WebRTC
+                await setupWebRTCConnection();
+
+            } catch (error) {
+                log(`❌ Error in onCameraReady: ${error.message}`);
+                console.error(error);
+                videoState = 'failed';
+                showToast(`Error: ${error.message}`, "error");
+            }
+        }
+
+        async function setupWebRTCConnection() {
+            try {
+                videoState = 'connecting';
+                log("🔧 Setting up WebRTC peer connection...");
+
+                // Create peer connection
                 peerConnection = new RTCPeerConnection(config);
 
+                // Setup event handlers
                 peerConnection.ontrack = (event) => {
-                    log("📹 Video track received");
+                    log("📹 Video track received!");
+                    videoState = 'connected';
+
                     let stream = event.streams && event.streams[0];
                     if (!stream) {
                         stream = new MediaStream();
                         stream.addTrack(event.track);
                     }
+
                     videoElement.srcObject = stream;
 
-                    // Better autoplay handling with retries
-                    const tryPlay = async (attempts = 3) => {
-                        for (let i = 0; i < attempts; i++) {
-                            try {
-                                await videoElement.play();
-                                log("✅ Video playing successfully");
-                                showVideoStatus("VIDEO CONNECTED");
-                                return;
-                            } catch (e) {
-                                log(`⚠️ Play attempt ${i + 1} failed: ${e.message}`);
-                                if (i < attempts - 1) {
-                                    await new Promise(r => setTimeout(r, 500));
-                                }
-                            }
-                        }
-                        log("⚠️ Autoplay failed - tap video to play");
-                        showToast("Tap the video to start playback", "info");
-                    };
-                    tryPlay();
+                    // Single play attempt with better handling
+                    videoElement.play()
+                        .then(() => {
+                            log("✅ Video playing successfully");
+                            showVideoStatus("VIDEO CONNECTED ✓");
+                            showToast("Video connected!", "success");
+                            isVideoRunning = true;
+                            connectionRetryCount = 0;
+                        })
+                        .catch(e => {
+                            log(`⚠️ Autoplay blocked: ${e.message}`);
+                            showVideoStatus("TAP VIDEO TO PLAY");
+                            showToast("Tap the video to start playback", "info");
+                            // Video is there, user just needs to click
+                        });
                 };
 
                 peerConnection.onicecandidate = (event) => {
@@ -473,6 +558,7 @@
                             sdpMLineIndex: event.candidate.sdpMLineIndex,
                             candidate: event.candidate.candidate
                         }));
+                        log(`📤 Sent ICE candidate`);
                     }
                 };
 
@@ -481,64 +567,61 @@
                     log(`🔗 Connection state: ${state}`);
 
                     if (state === 'connected') {
+                        videoState = 'connected';
                         connectionRetryCount = 0;
-                        showToast("Video connected!", "success");
                     } else if (state === 'failed') {
+                        videoState = 'failed';
                         if (connectionRetryCount < MAX_RETRIES) {
                             connectionRetryCount++;
                             log(`🔄 Connection failed, retrying... (${connectionRetryCount}/${MAX_RETRIES})`);
-                            showToast(`Retrying connection (${connectionRetryCount}/${MAX_RETRIES})...`, "info");
-
-                            // Try ICE restart
+                            showToast(`Retrying (${connectionRetryCount}/${MAX_RETRIES})...`, "info");
                             setTimeout(() => restartIce(), 1000);
                         } else {
-                            showToast("Connection failed. Try stopping and starting again.", "error");
+                            showToast("Connection failed. Please stop and try again.", "error");
                             connectionRetryCount = 0;
                         }
                     } else if (state === 'disconnected') {
-                        showToast("Connection interrupted, waiting...", "info");
+                        if (videoState === 'connected') {
+                            videoState = 'connecting';
+                        }
+                        showToast("Connection interrupted...", "info");
                     }
                 };
 
                 peerConnection.oniceconnectionstatechange = () => {
                     if (peerConnection) {
-                        log(`❄️ ICE State: ${peerConnection.iceConnectionState}`);
+                        const iceState = peerConnection.iceConnectionState;
+                        log(`❄️ ICE State: ${iceState}`);
                     }
                 };
 
-                log("⏳ Requesting camera...");
-                if (!currentDeviceId) return alert("Select a device!");
-                socket.emit('start_video', currentDeviceId);
-
-                // Wait longer for camera service to fully start on the phone
-                showVideoStatus("WAITING FOR CAMERA...");
-                await new Promise(r => setTimeout(r, 2000));
-
+                // Create and send offer
+                log("📝 Creating WebRTC offer...");
                 const offer = await peerConnection.createOffer({
                     offerToReceiveVideo: true,
                     offerToReceiveAudio: false
                 });
+
                 await peerConnection.setLocalDescription(offer);
+                log("✅ Local description set");
 
                 socket.emit('webrtc_offer', JSON.stringify({
                     targetId: currentDeviceId,
                     offer: { type: offer.type, sdp: offer.sdp }
                 }));
 
-                isVideoRunning = true;
-                connectionRetryCount = 0;
+                log("📤 Offer sent to phone");
+                showVideoStatus("OFFER SENT - WAITING...");
 
-                // Reset to Back Camera on start (assumption)
+                // Reset camera type tracking
                 currentCameraType = 'back';
                 updateOverlayButtons();
 
-                showVideoStatus("CONNECTING...");
-                showToast("Camera connection initiated...", "success");
-
             } catch (error) {
-                log(`❌ Error: ${error.message}`);
+                log(`❌ Error in setupWebRTCConnection: ${error.message}`);
                 console.error(error);
-                showToast(`Error: ${error.message}`, "error");
+                videoState = 'failed';
+                showToast(`WebRTC Error: ${error.message}`, "error");
             }
         }
 
@@ -547,6 +630,7 @@
                 if (!peerConnection || !currentDeviceId) return;
 
                 log("🔄 Restarting ICE connection...");
+                videoState = 'connecting';
 
                 const offer = await peerConnection.createOffer({
                     iceRestart: true,
@@ -563,12 +647,21 @@
                 showVideoStatus("RECONNECTING...");
             } catch (e) {
                 log(`❌ ICE restart failed: ${e.message}`);
+                videoState = 'failed';
             }
         }
 
         function stopVideo() {
             if (!currentDeviceId) return;
+
+            // Clear any pending timeout
+            if (cameraReadyTimeout) {
+                clearTimeout(cameraReadyTimeout);
+                cameraReadyTimeout = null;
+            }
+
             socket.emit('stop_video', currentDeviceId);
+
             if (peerConnection) {
                 peerConnection.close();
                 peerConnection = null;
@@ -577,10 +670,14 @@
                 videoElement.srcObject.getTracks().forEach(track => track.stop());
                 videoElement.srcObject = null;
             }
+
             isVideoRunning = false;
             connectionRetryCount = 0;
+            videoState = 'idle';  // Reset state machine
+
             showVideoStatus("CAMERA STOPPED");
             showToast("Camera stopped");
+            log("⏹️ Video stopped and cleaned up");
         }
 
         function switchVideo() {
@@ -755,10 +852,36 @@
 
         // WebRTC Handlers
         socket.on('webrtc_answer', async (a) => {
-            try { await peerConnection.setRemoteDescription(new RTCSessionDescription(JSON.parse(a))); } catch (e) { console.error(e); }
+            try {
+                log("📥 Received answer from phone");
+                await peerConnection.setRemoteDescription(new RTCSessionDescription(JSON.parse(a)));
+                log("✅ Remote description (answer) set");
+            } catch (e) {
+                log(`❌ Error setting answer: ${e.message}`);
+                console.error(e);
+            }
         });
         socket.on('webrtc_ice_candidate', async (c) => {
-            try { await peerConnection.addIceCandidate(new RTCIceCandidate(JSON.parse(c))); } catch (e) { console.error(e); }
+            try {
+                await peerConnection.addIceCandidate(new RTCIceCandidate(JSON.parse(c)));
+                log("📥 Received ICE candidate from phone");
+            } catch (e) {
+                log(`❌ Error adding ICE candidate: ${e.message}`);
+                console.error(e);
+            }
+        });
+
+        // New camera-first approach events
+        socket.on('camera_ready', (deviceId) => {
+            log(`✅ Received camera_ready signal from device: ${deviceId}`);
+            onCameraReady(deviceId);
+        });
+
+        socket.on('camera_status', (data) => {
+            log(`📹 Camera status: ${data.status}`);
+            if (data.deviceId === currentDeviceId) {
+                showVideoStatus(data.status);
+            }
         });
 
         // Audio Recording

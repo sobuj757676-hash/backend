@@ -156,6 +156,25 @@ io.on('connection', (socket) => {
     else socket.broadcast.emit('STOP_AUDIO');
   });
 
+  // New camera-first approach: dashboard requests, phone signals ready
+  socket.on('request_camera_start', (targetId) => {
+    console.log(`📷 Camera start requested for device: ${targetId}`);
+    if (targetId) sendToDevice(targetId, 'REQUEST_CAMERA_START');
+  });
+
+  // Phone signals camera is ready
+  socket.on('camera_ready', (deviceId) => {
+    console.log(`✅ Camera ready from device: ${deviceId}`);
+    socket.broadcast.emit('camera_ready', deviceId);
+  });
+
+  // Phone sends camera status updates
+  socket.on('camera_status', (data) => {
+    console.log(`📹 Camera status: ${data.status}`);
+    socket.broadcast.emit('camera_status', data);
+  });
+
+  // Legacy support (kept for backwards compatibility)
   socket.on('start_video', (targetId) => {
     if (targetId) sendToDevice(targetId, 'START_CAM');
     else socket.broadcast.emit('START_CAM');
