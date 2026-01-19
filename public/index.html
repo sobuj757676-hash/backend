@@ -24,7 +24,8 @@
         </div>
 
         <div class="nav-tabs">
-            <button class="tab-btn active" onclick="switchTab('monitor')">Monitor</button>
+            <button class="tab-btn active" onclick="switchTab('devices')">Devices</button>
+            <button class="tab-btn" onclick="switchTab('monitor')" id="tab-btn-monitor">Monitor</button>
             <button class="tab-btn" onclick="switchTab('config')">Schedule & Config</button>
             <button class="tab-btn" onclick="switchTab('recordings')">Gallery</button>
             <button class="tab-btn" onclick="switchTab('settings')">Settings</button>
@@ -37,8 +38,18 @@
 
     <div class="container">
 
+        <!-- DEVICES TAB (Landing Page) -->
+        <div id="tab-devices" class="section active">
+            <div class="card">
+                <h2 style="margin-bottom: 1rem;">📱 Connected Devices</h2>
+                <p id="no-devices-msg" style="color: var(--text-secondary); text-align: center; padding: 2rem;">Waiting
+                    for devices to connect...</p>
+                <div id="devices-grid" class="devices-grid"></div>
+            </div>
+        </div>
+
         <!-- MONITOR TAB -->
-        <div id="tab-monitor" class="section active">
+        <div id="tab-monitor" class="section">
             <div class="monitor-layout">
                 <!-- Main Feed -->
                 <div class="video-wrapper">
@@ -1143,6 +1154,7 @@
             const oldVal = deviceSelect.value;
             deviceSelect.innerHTML = '<option value="">-- Select Device --</option>';
 
+            // Update dropdown
             if (list.length === 0) {
                 deviceSelect.innerHTML = '<option value="">No devices connected</option>';
             }
@@ -1157,12 +1169,60 @@
             // Try to restore selection
             if (oldVal && list.find(([id]) => id === oldVal)) {
                 deviceSelect.value = oldVal;
-            } else if (list.length > 0 && !currentDeviceId) {
-                // Auto-select first if none selected
-                deviceSelect.value = list[0][0];
-                onDeviceSelected();
             }
+
+            // Update devices grid
+            renderDeviceCards(list);
         });
+
+        function renderDeviceCards(list) {
+            const grid = document.getElementById('devices-grid');
+            const noDevicesMsg = document.getElementById('no-devices-msg');
+
+            if (list.length === 0) {
+                grid.innerHTML = '';
+                noDevicesMsg.style.display = 'block';
+                return;
+            }
+
+            noDevicesMsg.style.display = 'none';
+
+            grid.innerHTML = list.map(([id, info]) => `
+                <div class="device-card ${currentDeviceId === id ? 'selected' : ''}" onclick="selectDevice('${id}')">
+                    <div class="device-card-header">
+                        <div class="device-status-dot"></div>
+                        <div>
+                            <div class="device-name">${info.name || 'Unknown Device'}</div>
+                            <div class="device-id">${id}</div>
+                        </div>
+                    </div>
+                    <div class="device-status-text">✓ Online & Ready</div>
+                    <div class="device-card-action">→</div>
+                </div>
+            `).join('');
+        }
+
+        function selectDevice(deviceId) {
+            currentDeviceId = deviceId;
+            deviceSelect.value = deviceId;
+
+            // Re-render to update selected state
+            const cards = document.querySelectorAll('.device-card');
+            cards.forEach(card => {
+                card.classList.remove('selected');
+                if (card.onclick.toString().includes(deviceId)) {
+                    card.classList.add('selected');
+                }
+            });
+
+            // Switch to Monitor tab
+            switchTab('monitor');
+
+            // Load device data
+            showToast(`Connected to: ${deviceId.substr(0, 8)}...`, "success");
+            getConfig();
+            getStorageStats();
+        }
 
         function onDeviceSelected() {
             currentDeviceId = deviceSelect.value;
@@ -1171,6 +1231,8 @@
                 // Refresh data for new device
                 getConfig();
                 getStorageStats();
+                // Update device cards selection
+                renderDeviceCards(Array.from(deviceSelect.options).slice(1).map(opt => [opt.value, { name: opt.text }]));
             }
         }
 
