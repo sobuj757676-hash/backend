@@ -36,7 +36,7 @@ const io = new Server(server, {
   pingInterval: 10000,  // Send ping every 10 seconds
   pingTimeout: 5000,    // Wait 5 seconds for pong before disconnecting
   // Allow reconnection after temporary disconnects
-  transports: ['websocket', 'polling'],
+  transports: ['websocket'], // Force WebSocket only
   // Upgrade timeout
   upgradeTimeout: 10000
 });
