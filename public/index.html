@@ -303,7 +303,18 @@
             reconnection: true,
             reconnectionAttempts: Infinity,
             reconnectionDelay: 1000,
-            timeout: 20000
+            timeout: 20000,
+            transports: ['websocket'] // Match server config
+        });
+
+        socket.on('connect', () => {
+            console.log('✅ Socket connected to server');
+            log('✅ Connected to server');
+        });
+
+        socket.on('connect_error', (err) => {
+            console.error('❌ Connection error:', err);
+            log('❌ Connection error: ' + err.message);
         });
         const logsDiv = document.getElementById('logs');
         const videoElement = document.getElementById('video-stream');
@@ -1150,6 +1161,9 @@
 
         // Device List Management
         socket.on('device_list_update', (list) => {
+            console.log('📋 Received device list update:', list);
+            log(`📋 Device list updated: ${list.length} devices`);
+
             // list = [[id, {name, socketId}], ...]
             const oldVal = deviceSelect.value;
             deviceSelect.innerHTML = '<option value="">-- Select Device --</option>';
