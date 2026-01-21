@@ -27,7 +27,18 @@ const io = new Server(server, {
     origin: allowedOrigins.includes('*') ? '*' : allowedOrigins,
     methods: ["GET", "POST"],
     credentials: true
-  }
+  },
+  // CRITICAL: Aggressive ping/pong to keep connections alive
+  // This helps with:
+  // 1. Android Doze mode (kills idle connections)
+  // 2. Render.com free tier timeout (30s inactivity)
+  // 3. Detecting dead connections faster
+  pingInterval: 10000,  // Send ping every 10 seconds
+  pingTimeout: 5000,    // Wait 5 seconds for pong before disconnecting
+  // Allow reconnection after temporary disconnects
+  transports: ['websocket', 'polling'],
+  // Upgrade timeout
+  upgradeTimeout: 10000
 });
 
 // Middleware
@@ -284,6 +295,32 @@ io.on('connection', (socket) => {
 
   socket.on('storage_stats', (stats) => {
     socket.broadcast.emit('storage_stats', stats);
+  });
+
+  // ============= Heartbeat for Connection Keep-Alive =============
+  // Prevents Render.com free tier from sleeping (30s timeout)
+  // Also helps detect stale connections on mobile devices
+  socket.on('heartbeat', (timestamp) => {
+    // Respond with pong to let client know connection is alive
+    socket.emit('pong_response', {
+      serverTime: Date.now(),
+      clientTime: timestamp,
+      latency: Date.now() - timestamp
+    });
+
+    // Update device's last seen time if it's a device
+    const deviceId = getDeviceIdBySocketId(socket.id);
+    if (deviceId && devices.has(deviceId)) {
+      const device = devices.get(deviceId);
+      device.lastSeen = new Date();
+      devices.set(deviceId, device);
+    }
+  });
+
+  // Log relay from device to dashboard
+  socket.on('log', (message) => {
+    const deviceId = getDeviceIdBySocketId(socket.id);
+    io.emit('server_log', `[${deviceId || 'unknown'}] ${message}`);
   });
 
   // ============= WebRTC Signaling Pass-Through =============
